@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 )
 
@@ -37,12 +39,22 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 }
 
 func main() {
-	file, err := os.Open("messages.txt")
+	address, err := net.ResolveUDPAddr("udp", "localhost:42069")
 	if err != nil {
-		log.Fatal("err opening file", err)
+		log.Fatal("err resolving UDP address", err)
 	}
-	linesChannel := getLinesChannel(file)
-	for line := range linesChannel {
-		fmt.Printf("read: %s\n", line)
+	connection, err:= net.DialUDP("udp", nil, address)
+	if err != nil {
+		log.Fatal("err listening to port 42069", err)
+	}
+	defer connection.Close()
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		fmt.Printf(">")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			log.Fatal("err reading", err)
+		}
+		connection.Write([]byte(input))
 	}
 }
