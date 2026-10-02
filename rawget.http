@@ -1,0 +1,4 @@
+read: GET /coffee HTTP/1.1
+read: Host: localhost:42069
+read: User-Agent: curl/8.7.1
+read: Accept: */*

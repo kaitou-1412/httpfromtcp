@@ -1,0 +1,8 @@
+read: POST /coffee HTTP/1.1
+read: Host: localhost:42069
+read: User-Agent: curl/8.7.1
+read: Accept: */*
+read: Content-Type: application/json
+read: Content-Length: 22
+read: 
+read: {"flavor":"dark mode"}
