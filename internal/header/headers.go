@@ -56,3 +56,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 	return numBytesParsed, false, nil
 }
+
+func (h Headers) Get(key string) (string, error) {
+	key = strings.ToLower(key)
+	if _, ok := h[key]; !ok {
+		return "", fmt.Errorf("key does not exist")
+	}
+	return h[key], nil
+}

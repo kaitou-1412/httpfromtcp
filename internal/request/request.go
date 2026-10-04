@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"httpfromtcp/internal/header"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -13,9 +14,10 @@ const bufferSize = 8
 type ParserState string 
 
 const (
-	ParserStateInitialized ParserState = "initialized"
+	ParserStateInitialized ParserState = "init"
+	ParserStateHeader ParserState = "header"
+	ParserStateBody ParserState = "body"
 	ParserStateDone ParserState = "done"
-	ParserStateHeader ParserState = "requestStateParsingHeaders"
 )  
 type RequestLine struct {
 	HttpVersion   string
@@ -27,6 +29,7 @@ type Request struct {
 	State ParserState
     RequestLine RequestLine
 	Headers header.Headers
+	Body []byte
 }
 
 func isOnlyUppercase(s string) bool {
@@ -83,9 +86,29 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, nil
 		}
 		if done {
-			r.State = ParserStateDone
+			r.State = ParserStateBody
 		}
 		return bytesParsed, nil
+	case ParserStateBody:
+		contentLengthStr, err := r.Headers.Get("Content-Length")
+		if err != nil {
+			r.State = ParserStateDone
+			return 0, nil
+		}
+		contentLength, err := strconv.Atoi(contentLengthStr)
+		if err != nil {
+			return 0, err
+		}
+		if contentLength < 0 {
+			return 0, fmt.Errorf("negative content length header value not allowed")
+		}
+		r.Body = append(r.Body, data...)
+		if len(r.Body) > contentLength {
+			return 0, fmt.Errorf("error content length")
+		} else if len(r.Body) == contentLength {
+			r.State = ParserStateDone
+		}
+		return len(data), nil
 	case ParserStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
 	default:
@@ -132,10 +155,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			readToIndex -= numBytesParsed
 		}
 		if readErr != nil {
-			if err == io.EOF && req.State == ParserStateDone {
+			if readErr == io.EOF && req.State == ParserStateDone {
 				break
 			}
-			if err == io.EOF {
+			if readErr == io.EOF {
 				return nil, fmt.Errorf("incomplete request: unexpected EOF")
 			}
 			return nil, fmt.Errorf("err reading request data from reader")
