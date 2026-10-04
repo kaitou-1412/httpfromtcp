@@ -2,6 +2,7 @@ package request
 
 import (
 	"fmt"
+	"httpfromtcp/internal/header"
 	"io"
 	"strings"
 )
@@ -14,6 +15,7 @@ type ParserState string
 const (
 	ParserStateInitialized ParserState = "initialized"
 	ParserStateDone ParserState = "done"
+	ParserStateHeader ParserState = "requestStateParsingHeaders"
 )  
 type RequestLine struct {
 	HttpVersion   string
@@ -22,8 +24,9 @@ type RequestLine struct {
 }
 
 type Request struct {
-    RequestLine RequestLine
 	State ParserState
+    RequestLine RequestLine
+	Headers header.Headers
 }
 
 func isOnlyUppercase(s string) bool {
@@ -58,7 +61,7 @@ func parseRequestLine(data string) (*RequestLine, int, error) {
 	return rl, len(s)+2, nil
 }
 
-func (r *Request) parse(data []byte) (int, error) {
+func (r *Request) parseSingle(data []byte) (int, error) {
 	switch r.State {
 	case ParserStateInitialized:
 		requestLine, bytesParsed, err := parseRequestLine(string(data))
@@ -69,7 +72,19 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, nil
 		}
 		r.RequestLine = *requestLine
-		r.State = ParserStateDone
+		r.State = ParserStateHeader
+		return bytesParsed, nil
+	case ParserStateHeader:
+		bytesParsed, done, err := r.Headers.Parse(data)
+		if err != nil {
+			return 0, err
+		}
+		if bytesParsed == 0 {
+			return 0, nil
+		}
+		if done {
+			r.State = ParserStateDone
+		}
 		return bytesParsed, nil
 	case ParserStateDone:
 		return 0, fmt.Errorf("error: trying to read data in a done state")
@@ -78,11 +93,27 @@ func (r *Request) parse(data []byte) (int, error) {
 	}
 }
 
+func (r *Request) parse(data []byte) (int, error) {
+	totalBytesParsed := 0
+	for r.State != ParserStateDone {
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		if err != nil {
+			return 0, err
+		}
+		if n == 0 {
+			break
+		}
+		totalBytesParsed += n
+	}
+	return totalBytesParsed, nil
+}
+
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	buf := make([]byte, bufferSize)
 	readToIndex := 0
 	req := &Request {
 		State: ParserStateInitialized,
+		Headers: header.NewHeaders(),
 	}
 	for req.State != ParserStateDone {
 		if readToIndex == len(buf) {
@@ -90,14 +121,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			copy(newBuf, buf)
 			buf = newBuf
 		}
-		numBytesRead, err := reader.Read(buf[readToIndex:])
-		if err != nil {
-			if err == io.EOF {
-				req.State = ParserStateDone
-				break
-			}
-			return nil, fmt.Errorf("err reading request data from reader")
-		}
+		numBytesRead, readErr := reader.Read(buf[readToIndex:])
 		readToIndex += numBytesRead
 		numBytesParsed, err := req.parse(buf[:readToIndex])
 		if err != nil {
@@ -106,6 +130,15 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if numBytesParsed > 0 {
 			copy(buf, buf[numBytesParsed:readToIndex])
 			readToIndex -= numBytesParsed
+		}
+		if readErr != nil {
+			if err == io.EOF && req.State == ParserStateDone {
+				break
+			}
+			if err == io.EOF {
+				return nil, fmt.Errorf("incomplete request: unexpected EOF")
+			}
+			return nil, fmt.Errorf("err reading request data from reader")
 		}
 	}
 	return req, nil
