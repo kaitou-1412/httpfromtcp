@@ -53,7 +53,7 @@ func parseRequestLine(data string) (*RequestLine, int, error) {
 	if !isOnlyUppercase(parts[0]) {
 		return nil, 0, fmt.Errorf("invalid request method")
 	}
-	if strings.HasPrefix(parts[2], "HTTP/") && parts[2][5:] != "1.1" {
+	if parts[2] != "HTTP/1.1" {
 		return nil, 0, fmt.Errorf("invalid HTTP version")
 	}
 	rl := &RequestLine {
