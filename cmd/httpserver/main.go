@@ -81,7 +81,7 @@ func proxyHandler(w *response.Writer, req *request.Request) bool {
 			break
 		}
 	}
-	if _, err := w.WriteChunkedBodyDone(h); err != nil {
+	if _, err := w.WriteChunkedBodyDone(); err != nil {
 		log.Printf("Error writing last chunk: %v", err)
 		return true
 	}
@@ -97,8 +97,40 @@ func proxyHandler(w *response.Writer, req *request.Request) bool {
 	return true
 }
 
+func videoHandler(w *response.Writer, req *request.Request) bool {
+	if req.RequestLine.Method != "GET" || req.RequestLine.RequestTarget != "/video" {
+		return false
+	}
+	file, err := os.ReadFile("./assets/vim.mp4")
+	if err != nil {
+		writeHTML(w, response.HTML{
+			StatusCode: response.InternalServerError,
+			H1: response.GetReasonPhrase(response.InternalServerError),
+			P: "Error reading video file",
+		})
+		return true
+	}
+	if err := w.WriteStatusLine(response.Ok); err != nil {
+		log.Printf("Error writing status line: %v", err)
+		return true
+	}
+	h := response.GetDefaultHeaders(len(file))
+	h["Content-Type"] = "video/mp4" 
+	if err := w.WriteHeaders(h); err != nil {
+		log.Printf("Error writing headers: %v", err)
+		return true
+	}
+	if _, err := w.WriteBody(file); err != nil {
+		log.Printf("Error writing video body: %v", err)
+		return true
+	}
+	return true
+}
+
 func handler(w *response.Writer, req *request.Request) {
 	if proxyHandler(w, req) {
+		return
+	} else if videoHandler(w, req) {
 		return
 	}
 	data := response.HTML{}

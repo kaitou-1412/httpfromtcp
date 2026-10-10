@@ -136,7 +136,7 @@ func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
 	return n, err
 }
 
-func (w *Writer) WriteChunkedBodyDone(h header.Headers) (int, error) {
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
 	if w.state != WriterStateHeader && w.state != WriterStateBody {
 		return 0, fmt.Errorf("invalid state: expected %s, got %s", WriterStateHeader, w.state)
 	}
