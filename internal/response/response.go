@@ -74,6 +74,14 @@ func GetHTMLHeaders(contentLen int) header.Headers {
 	return headers
 }
 
+func GetChunkedHeaders() header.Headers {
+	return header.Headers {
+		"Connection": "close",
+		"Content-Type": "text/plain",
+		"Transfer-Encoding": "chunked",
+	}
+}
+
 func (w *Writer) WriteStatusLine(statusCode StatusCode) error {
 	if w.state != WriterStateInitialized {
 		return fmt.Errorf("invalid state: expected %s, got %s", WriterStateInitialized, w.state)
@@ -105,6 +113,48 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 	w.state = WriterStateBody
 	n, err := w.writer.Write(p)
 	return n, err
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+	if w.state != WriterStateHeader && w.state != WriterStateBody {
+		return 0, fmt.Errorf("invalid state: expected %s, got %s", WriterStateHeader, w.state)
+	}
+	w.state = WriterStateBody
+	if len(p) == 0 {
+		return 0, nil
+	}
+	lengthBytes := []byte(fmt.Sprintf("%x%s", len(p), crlf))
+	_, err := w.writer.Write(lengthBytes)
+	if err != nil {
+		return 0, err
+	}
+	n, err := w.writer.Write(p)
+	if err != nil {
+		return 0, err
+	}
+	_, err = io.WriteString(w.writer, crlf)
+	return n, err
+}
+
+func (w *Writer) WriteChunkedBodyDone(h header.Headers) (int, error) {
+	if w.state != WriterStateHeader && w.state != WriterStateBody {
+		return 0, fmt.Errorf("invalid state: expected %s, got %s", WriterStateHeader, w.state)
+	}
+	w.state = WriterStateBody
+	return io.WriteString(w.writer, "0"+crlf)
+}
+
+func (w *Writer) WriteTrailers(h header.Headers) error {
+	if w.state != WriterStateBody {
+		return fmt.Errorf("invalid state: expected %s, got %s", WriterStateBody, w.state)
+	}
+	var b strings.Builder
+	for key, value := range(h) {
+		fmt.Fprintf(&b, "%s: %s%s", key, value, crlf)
+	}
+	b.WriteString(crlf)
+	_, err := io.WriteString(w.writer, b.String())
+	return err
 }
 
 func (data HTML) String() string {
